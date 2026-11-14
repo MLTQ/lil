@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "The creature window may listen for events and call the app's own commands.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

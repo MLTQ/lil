@@ -1,0 +1,41 @@
+{
+  "name": "claude",
+  "toolkit": "pixel-splat-sculptures",
+  "scene": "pixel-splat-sculptures/scenes/hermit-rigged.js",
+  "node": "node",
+  "window": {
+    "corner": "bottom-right",
+    "margin": 16,
+    "scale": 1.5,
+    "grab": "alt"
+  },
+  "render": {
+    "res": 192,
+    "fps": 25,
+    "yaw": 0.35
+  },
+  "port": 4747,
+  "states": {
+    "idle": {
+      "gesture": "idle",
+      "energy": 0.3
+    },
+    "thinking": {
+      "gesture": "idle",
+      "energy": 0.9
+    },
+    "tool": {
+      "gesture": "scuttle",
+      "energy": 0.7
+    },
+    "waiting": {
+      "gesture": "wave",
+      "energy": 0.5,
+      "for": 5
+    },
+    "error": {
+      "gesture": "startle",
+      "energy": 1.0
+    }
+  }
+}

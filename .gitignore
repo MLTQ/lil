@@ -1,0 +1,6 @@
+.DS_Store
+target/
+app/ui/vendor/
+app/src-tauri/gen/
+pixel-splat-sculptures/out/
+bodies/

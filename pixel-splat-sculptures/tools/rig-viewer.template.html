@@ -1,0 +1,111 @@
+<title>Rigged splat creature</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* layout: one vitrine with the creature, and beside it the control panel a model would drive: gestures, dials, and the live intent it sends */
+:root{
+  color-scheme:dark;
+  --bg:#070b12; --case:#050c14; --line:#1f2a3a; --fg:#e9eef2; --muted:#8194a8; --accent:#fba13c; --focus:#5fd6e0;
+  --display:"Pixelify Sans","Courier New",monospace; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--mono);font-size:14px;line-height:1.55}
+.wrap{max-width:1080px;margin:0 auto;padding-block:28px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,6vw,42px);line-height:1.05;margin:0;text-wrap:balance}
+h1 span{color:var(--accent)}
+.lede{color:var(--muted);max-width:64ch;margin:0}
+.stage{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:760px){.stage{grid-template-columns:minmax(0,1fr)}}
+canvas{width:100%;max-width:100%;aspect-ratio:1;display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:var(--case);border:1px solid var(--line);cursor:crosshair;touch-action:pan-y}
+.panel{display:flex;flex-direction:column;gap:18px;min-width:0}
+.group{display:flex;flex-direction:column;gap:8px}
+.lab{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+button{font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:none;color:var(--muted);border:1px solid var(--line);padding:8px 12px;cursor:pointer}
+button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+button:focus-visible,input:focus-visible,canvas:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+pre{margin:0;padding:12px;border:1px solid var(--line);background:var(--case);color:var(--fg);font:12px/1.6 var(--mono);overflow-x:auto;font-variant-numeric:tabular-nums}
+.note{color:var(--muted);font-size:12px;margin:0;max-width:70ch}
+</style>
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <h1 id="h1"></h1>
+    <p class="lede">A splat sculpture on a skeleton of <span id="nb"></span> bones. Move the pointer over it and it looks toward the pointer. <span id="clickhint"></span>Drag sideways to turn it.</p>
+  </header>
+  <div class="stage">
+    <canvas id="stage" tabindex="0" role="img" aria-label="Animated pixel-art hermit crab. Arrow keys turn it."></canvas>
+    <div class="panel">
+      <div class="group">
+        <span class="lab" id="glab">Gesture</span>
+        <div class="btns" role="group" aria-labelledby="glab" id="gestures"></div>
+      </div>
+      <div class="group">
+        <label class="lab" for="energy">Energy</label>
+        <input id="energy" type="range" min="0" max="1" step="0.05" value="0.5">
+      </div>
+      <div class="group">
+        <span class="lab">Intent the body receives</span>
+        <pre id="intent"></pre>
+      </div>
+      <div class="btns"><button id="pause" aria-pressed="false">Pause</button></div>
+    </div>
+  </div>
+  <p class="note">The controller turns that small intent into target angles for each bone. Springs do the easing: stiff bones snap to the pose, soft ones lag and overshoot. Jiggle bones are not driven at all; they are dragged along by whatever they are attached to.</p>
+</div>
+<script>
+/*CORE*/
+/*RIG*/
+(function(){
+  const data = /*DATA*/;
+  const controller = SplatRig.makeController(data.rig);
+  { const w = data.name.split(' '), h = document.getElementById('h1'); h.textContent = w.slice(0, -1).join(' ') + ' '; const sp = document.createElement('span'); sp.textContent = w[w.length - 1]; h.append(sp); document.title = data.name; }
+  const f32 = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new Float32Array(u.buffer); };
+  const u8 = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+  const sc = Object.assign({}, data, { D: f32(data.D), bA: u8(data.bA), bB: u8(data.bB), bW: f32(data.bW), ramps: data.ramps.map((r) => Uint8Array.from(r)) });
+  document.getElementById('nb').textContent = sc.bones.length;
+  const RES = 192, cv = document.getElementById('stage'), ctx = cv.getContext('2d');
+  cv.width = cv.height = RES;
+  const R = new Splat.Renderer(RES, RES), img = ctx.createImageData(RES, RES), rig = new SplatRig.Rig(sc);
+  const intent = { gesture: 'idle', since: 0, look: [0, 0], energy: 0.5 };
+  let yaw = 0.35, time = 10, lookGoal = [0, 0], paused = matchMedia('(prefers-reduced-motion: reduce)').matches, drag = null, last = 0;
+  const G = data.rig.gestures || {}, names = ['idle', ...Object.keys(G)], poke = names.find((n) => G[n] && G[n].once), box = document.getElementById('gestures'), btn = {};
+  function setGesture(g) { intent.gesture = g; intent.since = 0; names.forEach((n) => btn[n].setAttribute('aria-pressed', String(n === g))); }
+  names.forEach((n) => { const b = document.createElement('button'); b.id = 'g-' + n; b.textContent = n; b.addEventListener('click', () => setGesture(n)); btn[n] = b; box.append(b); });
+  setGesture('idle');
+  const pause = document.getElementById('pause');
+  const showPause = () => { pause.setAttribute('aria-pressed', String(paused)); pause.textContent = paused ? 'Play' : 'Pause'; };
+  pause.addEventListener('click', () => { paused = !paused; showPause(); }); showPause();
+  document.getElementById('energy').addEventListener('input', (e) => { intent.energy = +e.target.value; });
+  cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, yaw, moved: false }; try { cv.setPointerCapture(e.pointerId); } catch (_) {} });
+  cv.addEventListener('pointermove', (e) => {
+    const r = cv.getBoundingClientRect();
+    if (drag) { const dx = e.clientX - drag.x; if (Math.abs(dx) > 4) drag.moved = true; if (drag.moved) yaw = drag.yaw - dx * 0.012; return; }
+    lookGoal = [Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width - 0.5) * 2.4)), Math.max(-1, Math.min(1, -((e.clientY - r.top) / r.height - 0.55) * 2.4))];
+  });
+  cv.addEventListener('pointerup', () => { if (drag && !drag.moved && poke) setGesture(poke); drag = null; });
+  cv.addEventListener('pointercancel', () => { drag = null; });
+  cv.addEventListener('pointerleave', () => { if (!drag) lookGoal = [0, 0]; });
+  cv.addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { yaw += e.key === 'ArrowLeft' ? 0.15 : -0.15; e.preventDefault(); } });
+  const readout = document.getElementById('intent');
+  function draw() { img.data.set(R.draw(rig.scene, { yaw, pitch: 0.48, scale: RES / 2.55 }, time)); ctx.putImageData(img, 0, 0); }
+  function step(dt) {
+    time += dt; intent.since += dt;
+    { const g = G[intent.gesture]; if (g && g.once && intent.since > g.once + 0.1) setGesture('idle'); }
+    if (poke) document.getElementById('clickhint').textContent = 'Click it to play "' + poke + '". ';
+    const c = Math.cos(yaw);
+    intent.look[0] += (lookGoal[0] * c - intent.look[0]) * Math.min(1, dt * 8); intent.look[1] += (lookGoal[1] - intent.look[1]) * Math.min(1, dt * 8);
+    rig.update(controller(time, intent), dt);
+    readout.textContent = '{\n  "gesture": "' + intent.gesture + '",\n  "look":    [' + intent.look[0].toFixed(2) + ', ' + intent.look[1].toFixed(2) + '],\n  "energy":  ' + intent.energy.toFixed(2) + '\n}';
+  }
+  for (let i = 0; i < 30; i++) step(0.04); // settle so the first frame is a finished pose
+  draw();
+  requestAnimationFrame(function frame(ts) {
+    requestAnimationFrame(frame);
+    if (ts - last < 40) return;
+    const dt = Math.min(0.05, (ts - last) / 1000); last = ts;
+    if (!paused) step(dt);
+    draw();
+  });
+})();
+</script>

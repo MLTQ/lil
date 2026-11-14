@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pixel splat viewer</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0912;color:#ece6da;font:14px ui-monospace,Menlo,Consolas,monospace}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;box-sizing:border-box}
+  canvas{width:min(92vw,78vh);aspect-ratio:1;image-rendering:pixelated;image-rendering:crisp-edges;border:1px solid #262338;cursor:grab;touch-action:none}
+  .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+  button{font:inherit;background:none;color:#8f89a3;border:1px solid #262338;padding:6px 10px;cursor:pointer}
+  button[aria-pressed=true]{background:#ece6da;color:#0a0912}
+  #info{color:#8f89a3}
+</style>
+<div id="name"></div>
+<canvas id="c" tabindex="0"></canvas>
+<div class="row"><button data-res="128">128</button><button data-res="192" aria-pressed="true">192</button><button data-res="256">256</button><button id="spin" aria-pressed="true">Turntable</button></div>
+<div id="info"></div>
+<script>
+/*CORE*/
+</script>
+<script>
+const data = /*DATA*/;
+const bin = atob(data.D), bytes = new Uint8Array(bin.length);
+for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+const sc = Object.assign({}, data, { D: new Float32Array(bytes.buffer), ramps: data.ramps.map((r) => Uint8Array.from(r)) });
+document.getElementById('name').textContent = sc.name; document.title = sc.name;
+document.getElementById('info').textContent = sc.N.toLocaleString() + ' splats · ' + sc.rampNames.join(', ') + ' · drag to turn';
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let RES = 192, R, img, yaw = 0.5, spin = true, time = 3, drag = null, last = 0;
+function size() { cv.width = cv.height = RES; R = new Splat.Renderer(RES, RES); img = ctx.createImageData(RES, RES); }
+size();
+document.querySelectorAll('[data-res]').forEach((b) => b.onclick = () => { RES = +b.dataset.res; document.querySelectorAll('[data-res]').forEach((x) => x.setAttribute('aria-pressed', x === b)); size(); });
+const sp = document.getElementById('spin'); sp.onclick = () => { spin = !spin; sp.setAttribute('aria-pressed', spin); };
+cv.onpointerdown = (e) => { drag = { x: e.clientX, yaw }; cv.setPointerCapture(e.pointerId); };
+cv.onpointermove = (e) => { if (drag) yaw = drag.yaw - (e.clientX - drag.x) * 0.012; };
+cv.onpointerup = cv.onpointercancel = () => { drag = null; };
+(function frame(ts) {
+  requestAnimationFrame(frame);
+  if (ts - last < 40) return;
+  const dt = Math.min(0.1, (ts - last) / 1000); last = ts; time += dt;
+  if (spin && !drag) yaw += dt * 0.4;
+  img.data.set(R.draw(sc, { yaw, pitch: 0.48, scale: RES / 2.55 }, time)); ctx.putImageData(img, 0, 0);
+})(0);
+</script>
